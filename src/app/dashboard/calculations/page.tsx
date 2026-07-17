@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Calculator, Loader2 } from "lucide-react";
+import { postJson, errorMessage } from "@/lib/api-client";
+import ErrorBanner from "@/components/ErrorBanner";
 
 type CalcType = "molar_mass" | "concentration" | "ph" | "stoichiometry" | "dilution";
 
@@ -53,21 +55,11 @@ export default function CalculationsPage() {
     }
 
     try {
-      const res = await fetch("/api/calculations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: activeCalc, params }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Berechnung fehlgeschlagen");
-        return;
-      }
-
-      setResult(await res.json());
-    } catch {
-      setError("Netzwerkfehler");
+      setResult(
+        await postJson("/api/calculations", { type: activeCalc, params }, "Berechnung fehlgeschlagen")
+      );
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -156,7 +148,7 @@ export default function CalculationsPage() {
         </button>
       </div>
 
-      {error && <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+      <ErrorBanner message={error} />
 
       {result && (
         <div className="bg-card border border-border rounded-lg p-5">

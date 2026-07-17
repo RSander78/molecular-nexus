@@ -3,7 +3,9 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search, Download, Loader2, AlertTriangle } from "lucide-react";
-import { toast } from "sonner";
+import { postJson, errorMessage } from "@/lib/api-client";
+import { openPrintWindow } from "@/lib/print";
+import ErrorBanner from "@/components/ErrorBanner";
 
 function MoleculesContent() {
   const searchParams = useSearchParams();
@@ -35,22 +37,10 @@ function MoleculesContent() {
     setResult(null);
 
     try {
-      const res = await fetch("/api/molecules", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, type }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Suche fehlgeschlagen");
-        return;
-      }
-
-      const data = await res.json();
+      const data = await postJson("/api/molecules", { query: searchQuery, type }, "Suche fehlgeschlagen");
       setResult(data);
-    } catch {
-      setError("Netzwerkfehler. Bitte versuchen Sie es erneut.");
+    } catch (err) {
+      setError(errorMessage(err, "Netzwerkfehler. Bitte versuchen Sie es erneut."));
     } finally {
       setLoading(false);
     }
@@ -86,10 +76,7 @@ function MoleculesContent() {
     </div>` : ""}
     <p style="color:#666;font-size:12px;margin-top:32px">Generiert von Molecular Nexus · ${new Date().toLocaleDateString("de-DE")} · Datenquelle: PubChem (NCBI)</p>
     </body></html>`;
-    const w = window.open("", "_blank");
-    w?.document.write(html);
-    w?.document.close();
-    w?.print();
+    openPrintWindow(html);
   };
 
   return (
@@ -139,11 +126,7 @@ function MoleculesContent() {
       </div>
 
       {/* Error */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {error}
-        </div>
-      )}
+      <ErrorBanner message={error} />
 
       {/* Results */}
       {result && (

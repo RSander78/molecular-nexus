@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { jsonError, withErrorHandling } from "@/lib/api";
 import { invokeMistral } from "@/lib/mistral";
 import {
   getElectronConfiguration,
@@ -9,12 +10,11 @@ import {
   calculateHeisenberg,
 } from "@/lib/quantum";
 
-export async function POST(request: Request) {
-  try {
-    const { type, params } = await request.json();
-    let result: any;
+export const POST = withErrorHandling("Quantum error", "Quantenchemie-Berechnungsfehler", async (request) => {
+  const { type, params } = await request.json();
+  let result: any;
 
-    switch (type) {
+  switch (type) {
       case "electron_config":
         result = getElectronConfiguration(params.atomicNumber);
         break;
@@ -66,12 +66,8 @@ Antworte im JSON-Format mit Feldern: uv_vis, ir, h_nmr, c_nmr, ms.`,
         result = { analysis: specResult };
         break;
       default:
-        return NextResponse.json({ error: "Unbekannter Quantenchemie-Typ" }, { status: 400 });
+        return jsonError("Unbekannter Quantenchemie-Typ", 400);
     }
 
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error("Quantum error:", error);
-    return NextResponse.json({ error: "Quantenchemie-Berechnungsfehler" }, { status: 500 });
-  }
-}
+  return NextResponse.json(result);
+});
