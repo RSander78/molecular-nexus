@@ -103,9 +103,9 @@ export function calculateStoichiometry(
 }
 
 export function calculateDilution(
-  c1: number,
+  c1: number | null,
   v1: number | null,
-  c2: number,
+  c2: number | null,
   v2: number | null
 ): { result: number; label: string } {
   if (v1 === null && c1 && c2 && v2) {

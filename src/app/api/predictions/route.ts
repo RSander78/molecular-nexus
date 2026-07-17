@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { invokeMistral } from "@/lib/mistral";
+import { predictionsSchema, parseJsonBody } from "@/lib/validation";
+import { getClientIp, rateLimit } from "@/lib/rateLimit";
 
 const PROMPTS: Record<string, string> = {
   admet: `Du bist ein Experte für ADMET-Vorhersagen (Absorption, Distribution, Metabolismus, Exkretion, Toxizität).
@@ -39,10 +41,19 @@ Antworte im JSON-Format mit: descriptors (object), activity_prediction (object),
 
 export async function POST(request: Request) {
   try {
-    const { smiles, type } = await request.json();
-    if (!smiles || !type || !PROMPTS[type]) {
-      return NextResponse.json({ error: "SMILES und gültiger Typ sind erforderlich" }, { status: 400 });
+    const limit = rateLimit(`predictions:${getClientIp(request)}`, 20, 60_000);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Zu viele Anfragen" },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
     }
+
+    const parsed = await parseJsonBody(request, predictionsSchema);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+    const { smiles, type } = parsed.data;
 
     const systemPrompt = PROMPTS[type];
     const userMessage = type === "reaction"
