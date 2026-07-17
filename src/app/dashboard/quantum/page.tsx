@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Atom, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { postJson, errorMessage } from "@/lib/api-client";
+import ErrorBanner from "@/components/ErrorBanner";
 
 type QuantumTab = "electron_config" | "quantum_numbers" | "energy_levels" | "de_broglie" | "uncertainty" | "mo_analysis" | "spectroscopy";
 
@@ -52,26 +54,18 @@ export default function QuantumPage() {
     }
 
     try {
-      const res = await fetch("/api/quantum", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: activeTab, params }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Berechnung fehlgeschlagen");
-        return;
-      }
-
-      const data = await res.json();
+      const data = await postJson<any>(
+        "/api/quantum",
+        { type: activeTab, params },
+        "Berechnung fehlgeschlagen"
+      );
       if (data.result && typeof data.result === "string") {
         setLlmResult(data.result);
       } else {
         setResult(data);
       }
-    } catch {
-      setError("Netzwerkfehler");
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -161,7 +155,7 @@ export default function QuantumPage() {
         </button>
       </div>
 
-      {error && <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+      <ErrorBanner message={error} />
 
       {result && (
         <div className="bg-card border border-border rounded-lg p-5">

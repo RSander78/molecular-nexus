@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { jsonError, withErrorHandling } from "@/lib/api";
 import { invokeMistral } from "@/lib/mistral";
 
 const PROMPTS: Record<string, string> = {
@@ -37,26 +38,21 @@ Analysiere das folgende Molekül und berechne/schätze:
 Antworte im JSON-Format mit: descriptors (object), activity_prediction (object), druglikeness (object), similar_drugs (array).`
 };
 
-export async function POST(request: Request) {
-  try {
-    const { smiles, type } = await request.json();
-    if (!smiles || !type || !PROMPTS[type]) {
-      return NextResponse.json({ error: "SMILES und gültiger Typ sind erforderlich" }, { status: 400 });
-    }
-
-    const systemPrompt = PROMPTS[type];
-    const userMessage = type === "reaction"
-      ? `Reaktanten: ${smiles}\n\nAnalysiere diese Reaktion und sage die Produkte vorher.`
-      : `Molekül (SMILES): ${smiles}\n\nFühre die Analyse durch.`;
-
-    const result = await invokeMistral([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ]);
-
-    return NextResponse.json({ result });
-  } catch (error) {
-    console.error("Prediction error:", error);
-    return NextResponse.json({ error: "Vorhersage fehlgeschlagen" }, { status: 500 });
+export const POST = withErrorHandling("Prediction error", "Vorhersage fehlgeschlagen", async (request) => {
+  const { smiles, type } = await request.json();
+  if (!smiles || !type || !PROMPTS[type]) {
+    return jsonError("SMILES und gültiger Typ sind erforderlich", 400);
   }
-}
+
+  const systemPrompt = PROMPTS[type];
+  const userMessage = type === "reaction"
+    ? `Reaktanten: ${smiles}\n\nAnalysiere diese Reaktion und sage die Produkte vorher.`
+    : `Molekül (SMILES): ${smiles}\n\nFühre die Analyse durch.`;
+
+  const result = await invokeMistral([
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userMessage },
+  ]);
+
+  return NextResponse.json({ result });
+});
