@@ -8,30 +8,44 @@ import {
   calculateDeBroglie,
   calculateHeisenberg,
 } from "@/lib/quantum";
+import { quantumSchema, parseJsonBody } from "@/lib/validation";
+import { getClientIp, rateLimit } from "@/lib/rateLimit";
 
 export async function POST(request: Request) {
   try {
-    const { type, params } = await request.json();
-    let result: any;
+    const limit = rateLimit(`quantum:${getClientIp(request)}`, 30, 60_000);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Zu viele Anfragen" },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
+    }
 
-    switch (type) {
+    const parsed = await parseJsonBody(request, quantumSchema);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+    const body = parsed.data;
+    let result: unknown;
+
+    switch (body.type) {
       case "electron_config":
-        result = getElectronConfiguration(params.atomicNumber);
+        result = getElectronConfiguration(body.params.atomicNumber);
         break;
       case "quantum_numbers":
-        result = getQuantumNumbers(params.atomicNumber, params.electronNumber);
+        result = getQuantumNumbers(body.params.atomicNumber, body.params.electronNumber);
         break;
       case "hydrogen_energy":
-        result = calculateHydrogenEnergy(params.n);
+        result = calculateHydrogenEnergy(body.params.n);
         break;
       case "particle_in_box":
-        result = calculateParticleInBox(params.n, params.length, params.mass);
+        result = calculateParticleInBox(body.params.n, body.params.length, body.params.mass);
         break;
       case "de_broglie":
-        result = calculateDeBroglie(params.mass, params.velocity);
+        result = calculateDeBroglie(body.params.mass, body.params.velocity);
         break;
       case "heisenberg":
-        result = calculateHeisenberg(params.deltaX);
+        result = calculateHeisenberg(body.params.deltaX);
         break;
       case "mo_analysis":
         const moResult = await invokeMistral([
@@ -45,7 +59,7 @@ export async function POST(request: Request) {
 - Magnetische Eigenschaften (diamagnetisch/paramagnetisch)
 Antworte im JSON-Format.`,
           },
-          { role: "user", content: `Molekül: ${params.molecule}` },
+          { role: "user", content: `Molekül: ${body.params.molecule}` },
         ]);
         result = { analysis: moResult };
         break;
@@ -61,12 +75,10 @@ Antworte im JSON-Format.`,
 - MS: Molekülpeak, charakteristische Fragmentierungen
 Antworte im JSON-Format mit Feldern: uv_vis, ir, h_nmr, c_nmr, ms.`,
           },
-          { role: "user", content: `Molekül (SMILES): ${params.smiles}` },
+          { role: "user", content: `Molekül (SMILES): ${body.params.smiles}` },
         ]);
         result = { analysis: specResult };
         break;
-      default:
-        return NextResponse.json({ error: "Unbekannter Quantenchemie-Typ" }, { status: 400 });
     }
 
     return NextResponse.json(result);

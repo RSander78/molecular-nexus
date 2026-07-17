@@ -1,4 +1,6 @@
 import { streamMistral, ChatMessage } from "@/lib/mistral";
+import { chatSchema, parseJsonBody } from "@/lib/validation";
+import { getClientIp, rateLimit } from "@/lib/rateLimit";
 
 const SYSTEM_PROMPT = `Du bist ein hochqualifizierter Chemie-Fachassistent der Plattform "Molecular Nexus". 
 Du beantwortest Fragen zu allen Bereichen der Chemie: organische, anorganische, physikalische Chemie, 
@@ -15,15 +17,23 @@ Regeln:
 
 export async function POST(request: Request) {
   try {
-    const { messages } = await request.json();
-    if (!messages || !Array.isArray(messages)) {
-      return new Response("Nachrichten sind erforderlich", { status: 400 });
+    const limit = rateLimit(`chat:${getClientIp(request)}`, 20, 60_000);
+    if (!limit.allowed) {
+      return new Response("Zu viele Anfragen", {
+        status: 429,
+        headers: { "Retry-After": String(limit.retryAfterSeconds) },
+      });
+    }
+
+    const parsed = await parseJsonBody(request, chatSchema);
+    if (!parsed.success) {
+      return new Response(parsed.error, { status: 400 });
     }
 
     const chatMessages: ChatMessage[] = [
       { role: "system", content: SYSTEM_PROMPT },
-      ...messages.map((m: any) => ({
-        role: m.role as "user" | "assistant",
+      ...parsed.data.messages.map((m) => ({
+        role: m.role,
         content: m.content,
       })),
     ];
