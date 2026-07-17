@@ -8,8 +8,21 @@ import {
 } from "@/lib/chemistry";
 
 export async function POST(request: Request) {
+  let type: string;
+  let params: Record<string, any>;
   try {
-    const { type, params } = await request.json();
+    const body = await request.json();
+    type = body.type;
+    params = body.params;
+  } catch {
+    return NextResponse.json({ error: "Ungültiger Request-Body" }, { status: 400 });
+  }
+
+  if (!type || typeof params !== "object" || params === null) {
+    return NextResponse.json({ error: "Typ und Parameter sind erforderlich" }, { status: 400 });
+  }
+
+  try {
     let result: any;
 
     switch (type) {
@@ -19,9 +32,11 @@ export async function POST(request: Request) {
         break;
       case "concentration":
         result = calculateConcentration(params.moles, params.volume);
+        if (!result) return NextResponse.json({ error: "Volumen muss größer als 0 sein" }, { status: 400 });
         break;
       case "ph":
         result = calculatePH(params.concentration, params.acidBaseType, params.ka);
+        if (!result) return NextResponse.json({ error: "Ungültige Konzentration oder Ka/Kb" }, { status: 400 });
         break;
       case "stoichiometry":
         result = calculateStoichiometry(
@@ -31,9 +46,11 @@ export async function POST(request: Request) {
           params.coeffReactant,
           params.coeffProduct
         );
+        if (!result) return NextResponse.json({ error: "Ungültige Werte für Stöchiometrie" }, { status: 400 });
         break;
       case "dilution":
         result = calculateDilution(params.c1, params.v1, params.c2, params.v2);
+        if (!result) return NextResponse.json({ error: "Genau ein Wert muss leer bleiben, die übrigen müssen positiv sein" }, { status: 400 });
         break;
       default:
         return NextResponse.json({ error: "Unbekannter Berechnungstyp" }, { status: 400 });

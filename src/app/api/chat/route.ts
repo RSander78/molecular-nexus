@@ -40,6 +40,7 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         } catch (error) {
+          console.error("Chat streaming error:", error);
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ error: "Streaming-Fehler" })}\n\n`)
           );

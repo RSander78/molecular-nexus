@@ -53,7 +53,10 @@ export function calculateMolarMass(formula: string): {
 export function calculateConcentration(
   moles: number,
   volumeLiters: number
-): { molarity: number } {
+): { molarity: number } | null {
+  if (!Number.isFinite(moles) || !Number.isFinite(volumeLiters) || volumeLiters <= 0) {
+    return null;
+  }
   return { molarity: moles / volumeLiters };
 }
 
@@ -61,7 +64,13 @@ export function calculatePH(
   concentration: number,
   type: "strong_acid" | "strong_base" | "weak_acid" | "weak_base",
   ka?: number
-): { ph: number; poh: number; h3o: number; oh: number } {
+): { ph: number; poh: number; h3o: number; oh: number } | null {
+  if (!Number.isFinite(concentration) || concentration <= 0) {
+    return null;
+  }
+  if ((type === "weak_acid" || type === "weak_base") && ka !== undefined && ka <= 0) {
+    return null;
+  }
   let h3o: number;
 
   switch (type) {
@@ -95,7 +104,16 @@ export function calculateStoichiometry(
   productMolarMass: number,
   coeffReactant: number,
   coeffProduct: number
-): { productMass: number; molesReactant: number; molesProduct: number } {
+): { productMass: number; molesReactant: number; molesProduct: number } | null {
+  if (
+    ![reactantMass, reactantMolarMass, productMolarMass, coeffReactant, coeffProduct].every(
+      Number.isFinite
+    ) ||
+    reactantMolarMass <= 0 ||
+    coeffReactant <= 0
+  ) {
+    return null;
+  }
   const molesReactant = reactantMass / reactantMolarMass;
   const molesProduct = molesReactant * (coeffProduct / coeffReactant);
   const productMass = molesProduct * productMolarMass;
@@ -103,11 +121,11 @@ export function calculateStoichiometry(
 }
 
 export function calculateDilution(
-  c1: number,
+  c1: number | null,
   v1: number | null,
-  c2: number,
+  c2: number | null,
   v2: number | null
-): { result: number; label: string } {
+): { result: number; label: string } | null {
   if (v1 === null && c1 && c2 && v2) {
     return { result: (c2 * v2) / c1, label: "V₁" };
   }
@@ -117,5 +135,6 @@ export function calculateDilution(
   if (c2 === null && c1 && v1 && v2) {
     return { result: (c1 * v1) / v2, label: "c₂" };
   }
-  return { result: 0, label: "Fehler" };
+  // Not enough (or ambiguous) inputs to solve for exactly one unknown.
+  return null;
 }
