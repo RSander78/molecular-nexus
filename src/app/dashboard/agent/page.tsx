@@ -39,36 +39,56 @@ export default function ChemAgentPage() {
       if (!response.ok) throw new Error("Chat-Fehler");
 
       const reader = response.body?.getReader();
+      if (!reader) throw new Error("Kein Antwort-Stream verfügbar");
       const decoder = new TextDecoder();
       let assistantContent = "";
+      let buffer = "";
+      let streamError: string | null = null;
 
       setMessages([...newMessages, { role: "assistant", content: "" }]);
 
-      while (reader) {
+      outer: while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
+        // Buffer across reads so a `data:` line split over chunk boundaries is
+        // not dropped. Only complete lines (ending in "\n") are processed.
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") break;
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.content) {
-                assistantContent += parsed.content;
-                setMessages([
-                  ...newMessages,
-                  { role: "assistant", content: assistantContent },
-                ]);
-              }
-            } catch {}
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") break outer;
+          let parsed: { content?: string; error?: string };
+          try {
+            parsed = JSON.parse(data);
+          } catch (parseError) {
+            // A malformed complete SSE line is unexpected: surface it rather
+            // than silently discarding it.
+            console.error("Fehler beim Parsen des Chat-Streams:", parseError, data);
+            continue;
+          }
+          if (parsed.error) {
+            streamError = parsed.error;
+            break outer;
+          }
+          if (parsed.content) {
+            assistantContent += parsed.content;
+            setMessages([
+              ...newMessages,
+              { role: "assistant", content: assistantContent },
+            ]);
           }
         }
       }
+
+      if (streamError) {
+        throw new Error(streamError);
+      }
     } catch (error) {
+      console.error("Chat-Fehler:", error);
       setMessages([
         ...newMessages,
         {

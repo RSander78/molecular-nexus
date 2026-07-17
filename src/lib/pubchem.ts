@@ -23,67 +23,94 @@ export interface GHSData {
   signalWord: string | null;
 }
 
+/**
+ * Raised when the PubChem service cannot be reached or returns an unexpected
+ * error. Distinct from a successful "no results" lookup (which returns null)
+ * so callers can report the two cases differently.
+ */
+export class PubChemServiceError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+    this.name = "PubChemServiceError";
+  }
+}
+
 export async function searchMolecule(
   query: string,
   type: "name" | "smiles" | "formula"
 ): Promise<MoleculeData | null> {
-  try {
-    let url: string;
-    switch (type) {
-      case "name":
-        url = `${PUBCHEM_BASE}/compound/name/${encodeURIComponent(query)}/property/MolecularFormula,MolecularWeight,CanonicalSMILES,InChIKey,XLogP,HBondDonorCount,HBondAcceptorCount,TPSA,RotatableBondCount,Complexity/JSON`;
-        break;
-      case "smiles":
-        url = `${PUBCHEM_BASE}/compound/smiles/${encodeURIComponent(query)}/property/MolecularFormula,MolecularWeight,CanonicalSMILES,InChIKey,XLogP,HBondDonorCount,HBondAcceptorCount,TPSA,RotatableBondCount,Complexity/JSON`;
-        break;
-      case "formula":
-        url = `${PUBCHEM_BASE}/compound/fastformula/${encodeURIComponent(query)}/property/MolecularFormula,MolecularWeight,CanonicalSMILES,InChIKey,XLogP,HBondDonorCount,HBondAcceptorCount,TPSA,RotatableBondCount,Complexity/JSON`;
-        break;
-    }
-
-    const response = await fetch(url);
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const props = data.PropertyTable?.Properties?.[0];
-    if (!props) return null;
-
-    const cid = props.CID;
-    const ghsData = await fetchGHSData(cid);
-
-    // Fetch compound name
-    let name = query;
-    if (type !== "name") {
-      try {
-        const nameRes = await fetch(
-          `${PUBCHEM_BASE}/compound/cid/${cid}/description/JSON`
-        );
-        if (nameRes.ok) {
-          const nameData = await nameRes.json();
-          name = nameData.InformationList?.Information?.[0]?.Title || query;
-        }
-      } catch {}
-    }
-
-    return {
-      cid,
-      name,
-      molecularFormula: props.MolecularFormula,
-      molecularWeight: props.MolecularWeight,
-      canonicalSmiles: props.CanonicalSMILES,
-      inchiKey: props.InChIKey,
-      xlogp: props.XLogP ?? null,
-      hbondDonors: props.HBondDonorCount,
-      hbondAcceptors: props.HBondAcceptorCount,
-      tpsa: props.TPSA ?? null,
-      rotatableBonds: props.RotatableBondCount,
-      complexity: props.Complexity ?? null,
-      ghsClassification: ghsData,
-    };
-  } catch (error) {
-    console.error("PubChem search error:", error);
-    return null;
+  let url: string;
+  switch (type) {
+    case "name":
+      url = `${PUBCHEM_BASE}/compound/name/${encodeURIComponent(query)}/property/MolecularFormula,MolecularWeight,CanonicalSMILES,InChIKey,XLogP,HBondDonorCount,HBondAcceptorCount,TPSA,RotatableBondCount,Complexity/JSON`;
+      break;
+    case "smiles":
+      url = `${PUBCHEM_BASE}/compound/smiles/${encodeURIComponent(query)}/property/MolecularFormula,MolecularWeight,CanonicalSMILES,InChIKey,XLogP,HBondDonorCount,HBondAcceptorCount,TPSA,RotatableBondCount,Complexity/JSON`;
+      break;
+    case "formula":
+      url = `${PUBCHEM_BASE}/compound/fastformula/${encodeURIComponent(query)}/property/MolecularFormula,MolecularWeight,CanonicalSMILES,InChIKey,XLogP,HBondDonorCount,HBondAcceptorCount,TPSA,RotatableBondCount,Complexity/JSON`;
+      break;
   }
+
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (error) {
+    throw new PubChemServiceError(
+      `PubChem konnte nicht erreicht werden: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+
+  // PubChem returns 404 when a compound genuinely does not exist.
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new PubChemServiceError(
+      `PubChem antwortete mit Status ${response.status}`,
+      response.status
+    );
+  }
+
+  const data = await response.json();
+  const props = data.PropertyTable?.Properties?.[0];
+  if (!props) return null;
+
+  const cid = props.CID;
+  const ghsData = await fetchGHSData(cid);
+
+  // Fetch compound name (best-effort: a missing display name must not fail the
+  // whole lookup, so we fall back to the query and log any failure).
+  let name = query;
+  if (type !== "name") {
+    try {
+      const nameRes = await fetch(
+        `${PUBCHEM_BASE}/compound/cid/${cid}/description/JSON`
+      );
+      if (nameRes.ok) {
+        const nameData = await nameRes.json();
+        name = nameData.InformationList?.Information?.[0]?.Title || query;
+      }
+    } catch (error) {
+      console.warn(`PubChem name lookup failed for CID ${cid}:`, error);
+    }
+  }
+
+  return {
+    cid,
+    name,
+    molecularFormula: props.MolecularFormula,
+    molecularWeight: props.MolecularWeight,
+    canonicalSmiles: props.CanonicalSMILES,
+    inchiKey: props.InChIKey,
+    xlogp: props.XLogP ?? null,
+    hbondDonors: props.HBondDonorCount,
+    hbondAcceptors: props.HBondAcceptorCount,
+    tpsa: props.TPSA ?? null,
+    rotatableBonds: props.RotatableBondCount,
+    complexity: props.Complexity ?? null,
+    ghsClassification: ghsData,
+  };
 }
 
 async function fetchGHSData(cid: number): Promise<GHSData | null> {
@@ -160,7 +187,10 @@ async function fetchGHSData(cid: number): Promise<GHSData | null> {
     if (pictograms.length === 0 && hStatements.length === 0) return null;
 
     return { pictograms, hStatements, pStatements, signalWord };
-  } catch {
+  } catch (error) {
+    // GHS data is supplementary; log but degrade gracefully to null rather
+    // than failing the whole molecule lookup.
+    console.warn(`PubChem GHS lookup failed for CID ${cid}:`, error);
     return null;
   }
 }

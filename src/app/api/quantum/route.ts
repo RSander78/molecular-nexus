@@ -9,29 +9,54 @@ import {
   calculateHeisenberg,
 } from "@/lib/quantum";
 
-export async function POST(request: Request) {
+// Synchronous physics calculations throw Error on invalid input; these are
+// client mistakes and must be reported as 400, not swallowed into a 500.
+class ValidationError extends Error {}
+
+function runSync<T>(fn: () => T): T {
   try {
-    const { type, params } = await request.json();
+    return fn();
+  } catch (error) {
+    throw new ValidationError(error instanceof Error ? error.message : String(error));
+  }
+}
+
+export async function POST(request: Request) {
+  let type: string;
+  let params: Record<string, any>;
+  try {
+    const body = await request.json();
+    type = body.type;
+    params = body.params;
+  } catch {
+    return NextResponse.json({ error: "Ungültiger Request-Body" }, { status: 400 });
+  }
+
+  if (!type || typeof params !== "object" || params === null) {
+    return NextResponse.json({ error: "Typ und Parameter sind erforderlich" }, { status: 400 });
+  }
+
+  try {
     let result: any;
 
     switch (type) {
       case "electron_config":
-        result = getElectronConfiguration(params.atomicNumber);
+        result = runSync(() => getElectronConfiguration(params.atomicNumber));
         break;
       case "quantum_numbers":
-        result = getQuantumNumbers(params.atomicNumber, params.electronNumber);
+        result = runSync(() => getQuantumNumbers(params.atomicNumber, params.electronNumber));
         break;
       case "hydrogen_energy":
-        result = calculateHydrogenEnergy(params.n);
+        result = runSync(() => calculateHydrogenEnergy(params.n));
         break;
       case "particle_in_box":
-        result = calculateParticleInBox(params.n, params.length, params.mass);
+        result = runSync(() => calculateParticleInBox(params.n, params.length, params.mass));
         break;
       case "de_broglie":
-        result = calculateDeBroglie(params.mass, params.velocity);
+        result = runSync(() => calculateDeBroglie(params.mass, params.velocity));
         break;
       case "heisenberg":
-        result = calculateHeisenberg(params.deltaX);
+        result = runSync(() => calculateHeisenberg(params.deltaX));
         break;
       case "mo_analysis":
         const moResult = await invokeMistral([
@@ -71,6 +96,9 @@ Antworte im JSON-Format mit Feldern: uv_vis, ir, h_nmr, c_nmr, ms.`,
 
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof ValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     console.error("Quantum error:", error);
     return NextResponse.json({ error: "Quantenchemie-Berechnungsfehler" }, { status: 500 });
   }

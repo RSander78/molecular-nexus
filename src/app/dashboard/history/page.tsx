@@ -20,7 +20,12 @@ export default function HistoryPage() {
     if (stored) {
       try {
         setAnalyses(JSON.parse(stored));
-      } catch {}
+      } catch (error) {
+        // Corrupt data would otherwise break the page on every load; log it
+        // and discard so the history can recover.
+        console.error("Ungültige Historie in localStorage, wird zurückgesetzt:", error);
+        localStorage.removeItem("molecular-nexus-history");
+      }
     }
   }, []);
 
